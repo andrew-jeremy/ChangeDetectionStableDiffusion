@@ -35,11 +35,9 @@ import numpy as np
 from diffusers import StableDiffusionPipeline
 from pytorch_msssim import ssim  
 import argparse
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.transforms import functional as TF
 
 from model import DiffusionBasedChangeDetector, ChangeDetectionDataset, StableDiffusionFeatureExtractor, pipeline
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from utils import VAE, LatentDifferenceNetwork, compute_ssim_change_map, filter_change_map_with_objects, visualize_change_map, train_vae
 
 # Initialize the model
@@ -164,46 +162,6 @@ def train_change_detector_ssim(model, dataloader, num_epochs=5, learning_rate=1e
 
     print("Training completed.\n")
     
-#--------------------> with object detection -------------------------
-# Training loop with object detection and SSIM-based change map
-def train_change_detector_with_objects_and_ssim(model, vae, latent_diff_net, object_detector, dataloader, num_epochs=10, learning_rate=1e-5, device='cuda'):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    vae.to(device)
-    latent_diff_net.to(device)
-    object_detector.to(device).eval()  # Object detector is used in evaluation mode
-    model.to(device)
-
-    model.train()
-    vae.eval()  # VAE is used in evaluation mode to extract latent features
-
-    for epoch in range(num_epochs):
-        running_loss = 0.0
-        for image1, image2 in dataloader:
-            image1, image2 = image1.to(device), image2.to(device)
-
-            optimizer.zero_grad()
-
-            # Compute the SSIM-based change map
-            heuristic_change_map = compute_ssim_change_map(image1, image2)
-
-            # Filter the SSIM change map using object detection
-            filtered_change_map = filter_change_map_with_objects(heuristic_change_map, image1, image2, object_detector)
-
-            # Forward pass through the change detection model
-            output_change_map = model(image1, image2)
-
-            # Compute loss between model output and the filtered SSIM change map
-            loss = nn.MSELoss()(output_change_map, filtered_change_map)
-
-            # Backpropagation
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(dataloader):.4f}")
-
-    print("Training completed.")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -211,7 +169,6 @@ if __name__ == "__main__":
     parser.add_argument('--diff', type=bool, default=True, help='absolute difference')
     parser.add_argument('--vae', type=bool, default=False, help='VAE latent space difference label')
     parser.add_argument('--ssim', type=bool, default=False, help='SSMI space difference label')
-    parser.add_argument('--obj', type=bool, default=False, help='object detector with SSMI space difference label')
     args = parser.parse_args()
     # Fine-tune the model in an unsupervised manner
 
@@ -245,12 +202,7 @@ if __name__ == "__main__":
         # uses SSIM calculation 
         title = "SSMI space difference label"
         train_change_detector_ssim(change_detector, dataloader, num_epochs=200, learning_rate=1e-4, device=device)
-    elif args.obj:
-        # Train the model using the unsupervised approach with object detection and SSIM-based change map
-        title = "object detector with SSMI space difference label"
-        object_detector = fasterrcnn_resnet50_fpn(pretrained=True)
-        train_change_detector_with_objects_and_ssim(change_detector, vae, latent_diff_net, object_detector, dataloader, num_epochs=200, learning_rate=1e-4, device=device)
-
+    
     # Step 9: Test with a pair of images
     image1, image2 = dataset[0]
     visualize_change_map(change_detector, image1, image2, title, device=device, invert=True)
