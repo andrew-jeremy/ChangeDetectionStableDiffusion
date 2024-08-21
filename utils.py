@@ -12,6 +12,7 @@ Andrew Kiruluta, 08/20/2024
 '''
 import torch
 import torch.nn as nn
+import numpy as np
 import torch.nn.functional as F
 from torchvision.transforms import functional as TF
 import matplotlib.pyplot as plt
